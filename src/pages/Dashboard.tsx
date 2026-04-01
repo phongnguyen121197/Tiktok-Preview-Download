@@ -162,11 +162,14 @@ function Dashboard() {
     setFastmossLoading(true);
     setFastmossError(null);
     try {
-      const result = await window.electronAPI.openFastMoss(url, metadata?.uploader);
+      // Trích xuất username trực tiếp từ link video: sau dấu "@" và trước dấu "/"
+      const usernameMatch = url.match(/@([^\/\?]+)\//);
+      const username = usernameMatch ? usernameMatch[1] : (metadata?.uploader || '');
+
+      const result = await window.electronAPI.openFastMoss(url, username);
       if (!result?.success) {
         // Fallback: mở thẳng trình duyệt ngoài nếu không có cookies
-        const username = metadata.uploader || '';
-        const fallbackUrl = `https://www.fastmoss.com/vi/influencer/search?keyword=${encodeURIComponent(username)}`;
+        const fallbackUrl = `https://www.fastmoss.com/vi/influencer/search?keyword=${encodeURIComponent('@' + username)}`;
         window.open(fallbackUrl, '_blank');
         if (result?.error?.includes('cookie') || result?.error?.includes('Cookie')) {
           setFastmossError('Chưa cấu hình cookies → đã mở FastMoss trên trình duyệt. Vào Settings để cấu hình cookies cho trải nghiệm tốt hơn.');
@@ -174,8 +177,9 @@ function Dashboard() {
       }
     } catch {
       // Nếu có lỗi bất ngờ, vẫn fallback ra browser
-      const username = metadata?.uploader || '';
-      window.open(`https://www.fastmoss.com/vi/influencer/search?keyword=${encodeURIComponent(username)}`, '_blank');
+      const usernameMatch = url.match(/@([^\/\?]+)\//);
+      const username = usernameMatch ? usernameMatch[1] : (metadata?.uploader || '');
+      window.open(`https://www.fastmoss.com/vi/influencer/search?keyword=${encodeURIComponent('@' + username)}`, '_blank');
     } finally {
       setFastmossLoading(false);
       // Tự xóa thông báo lỗi sau 5 giây

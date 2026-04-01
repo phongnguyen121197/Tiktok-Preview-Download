@@ -1004,7 +1004,7 @@ ipcMain.handle('open-fastmoss', async (_event, tiktokUrl: string, displayName?: 
       height: 900,
       minWidth: 1000,
       minHeight: 700,
-      title: `FastMoss - @${username}`,
+      title: `FastMoss - @${uniqueId}`,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -1065,7 +1065,7 @@ ipcMain.handle('open-fastmoss', async (_event, tiktokUrl: string, displayName?: 
     
     await newWindow.loadURL(searchUrl);
     
-    logger.info(`FastMoss window opened for: ${username}`);
+    logger.info(`FastMoss window opened for: ${searchKeyword}`);
     
     return { success: true };
     
