@@ -1,24 +1,30 @@
-import { useState, useCallback } from 'react';
-import { 
-  Link2, 
-  Copy, 
-  Search, 
-  Play, 
-  Download, 
-  Clock, 
-  Eye, 
-  Heart, 
+import { useState, useCallback, useEffect, useRef } from 'react';
+import {
+  Link2,
+  Copy,
+  Search,
+  Play,
+  Download,
+  Clock,
+  Eye,
+  Heart,
   MessageCircle,
   User,
   Calendar,
   ShoppingBag,
   Store,
-  Package
+  Package,
+  Users,
+  ExternalLink,
+  ClipboardCheck
 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import VideoPlayer from '../components/ui/VideoPlayer';
 import { LoadingSpinner, MetadataSkeleton } from '../components/ui/Loading';
 import { VideoMetadata, ProductInfo } from '../types/electron.d';
+
+// Regex nhận diện TikTok URL hợp lệ
+const TIKTOK_URL_REGEX = /https?:\/\/(www\.|vm\.|vt\.)?tiktok\.com\/.+/i;
 
 function Dashboard() {
   const [url, setUrl] = useState('');
@@ -30,8 +36,42 @@ function Dashboard() {
   // Product info state
   const [productInfo, setProductInfo] = useState<ProductInfo | null>(null);
   const [productLoading, setProductLoading] = useState(false);
+  // Auto-paste state
+  const [autoPasteNotice, setAutoPasteNotice] = useState(false);
+  const lastPastedUrl = useRef<string>('');
 
-  // Handle paste from clipboard
+  // ─── Auto-paste clipboard khi app được focus ───────────────────────────────
+  const tryAutoPaste = useCallback(async () => {
+    try {
+      const settings = await window.electronAPI.getSettings();
+      const autoPaste = (settings?.data as any)?.autoPasteClipboard;
+      if (autoPaste !== 'true') return;
+
+      const text = await navigator.clipboard.readText();
+      const trimmed = text?.trim();
+      if (
+        trimmed &&
+        TIKTOK_URL_REGEX.test(trimmed) &&
+        trimmed !== lastPastedUrl.current
+      ) {
+        lastPastedUrl.current = trimmed;
+        setUrl(trimmed);
+        setAutoPasteNotice(true);
+        setTimeout(() => setAutoPasteNotice(false), 2500);
+      }
+    } catch {
+      // Clipboard không khả dụng hoặc quyền bị từ chối — bỏ qua
+    }
+  }, []);
+
+  // Chạy khi component mount + mỗi lần window được focus
+  useEffect(() => {
+    tryAutoPaste();
+    window.addEventListener('focus', tryAutoPaste);
+    return () => window.removeEventListener('focus', tryAutoPaste);
+  }, [tryAutoPaste]);
+
+  // Handle paste thủ công (click icon)
   const handlePaste = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
@@ -160,7 +200,7 @@ function Dashboard() {
               placeholder="https://www.tiktok.com/@user/video/..."
               className="input pr-12"
             />
-            <button 
+            <button
               onClick={handlePaste}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
               title="Paste from clipboard"
@@ -168,7 +208,7 @@ function Dashboard() {
               <Copy className="w-5 h-5" />
             </button>
           </div>
-          <button 
+          <button
             onClick={handleFetch}
             disabled={!url.trim() || loading}
             className="btn btn-primary px-6"
@@ -183,6 +223,14 @@ function Dashboard() {
             )}
           </button>
         </div>
+
+        {/* Auto-paste notice */}
+        {autoPasteNotice && (
+          <div className="mt-3 flex items-center gap-2 text-xs text-tiktok-cyan animate-fadeIn">
+            <ClipboardCheck className="w-3.5 h-3.5" />
+            <span>URL TikTok đã được tự động dán từ clipboard</span>
+          </div>
+        )}
 
         {error && (
           <div className="mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
@@ -351,6 +399,32 @@ function Dashboard() {
                   <div className="flex items-center gap-2 text-white/40 text-sm">
                     <ShoppingBag className="w-4 h-4" />
                     <span>No product attached to this video</span>
+                  </div>
+                </div>
+              )}
+
+              {/* FastMoss KOC Button */}
+              {metadata && (
+                <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-purple-500/20 to-tiktok-cyan/20 p-[1px]">
+                  <div className="glass rounded-xl p-4 bg-black/40 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                        <Users className="w-4 h-4 text-purple-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">Tìm KOC trên FastMoss</p>
+                        <p className="text-xs text-white/50">
+                          Xem analytics của @{metadata.uploader}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => window.electronAPI.openFastMoss(url)}
+                      className="flex items-center gap-1.5 text-sm font-medium text-tiktok-cyan hover:text-white transition-colors flex-shrink-0"
+                    >
+                      Mở FastMoss
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               )}
