@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { createLogger, format, transports } from 'winston';
 import initSqlJs, { Database } from 'sql.js';
 import { getShopScraper, ProductInfo } from './tiktok-shop-scraper';
+import { AIService, validateLicenseKey, VideoMetadataForAI, KOCDataForAI } from './services/aiService';
 // Removed @tobyg74/tiktok-api-dl due to native module issues - using direct API calls instead
 
 // TikTok API Configuration
@@ -1175,6 +1176,89 @@ ipcMain.handle('refresh-fastmoss-session', async () => {
     return { success: true, message: `Refreshed ${cookies.length} cookies` };
   } catch (err) {
     return { success: false, error: (err as Error).message };
+  }
+});
+
+// ============================================================================
+// AI ANALYSIS + LICENSE
+// ============================================================================
+
+// Helper: lấy setting từ DB
+function getSettingValue(key: string): string {
+  if (!db) return '';
+  try {
+    const stmt = db.prepare('SELECT value FROM settings WHERE key = ?');
+    stmt.bind([key]);
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as { value: string };
+      stmt.free();
+      return row.value || '';
+    }
+    stmt.free();
+  } catch { /* ignore */ }
+  return '';
+}
+
+// Validate license key
+ipcMain.handle('validate-license', async (_event, key: string) => {
+  const isValid = validateLicenseKey(key);
+  if (isValid) {
+    // Lưu license key vào settings
+    if (db) {
+      db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['licenseKey', key]);
+      saveDatabase();
+    }
+  }
+  return { valid: isValid };
+});
+
+// Kiểm tra license đã activate chưa
+ipcMain.handle('check-license', async () => {
+  const key = getSettingValue('licenseKey');
+  return { active: validateLicenseKey(key), key };
+});
+
+// Phân tích AI nội dung video
+ipcMain.handle('analyze-video-ai', async (_event, metadata: VideoMetadataForAI) => {
+  try {
+    const apiKey = getSettingValue('anthropicApiKey');
+    if (!apiKey) {
+      return { success: false, error: 'Chưa cấu hình Anthropic API Key trong Settings' };
+    }
+    const licenseKey = getSettingValue('licenseKey');
+    if (!validateLicenseKey(licenseKey)) {
+      return { success: false, error: 'License key không hợp lệ hoặc chưa được kích hoạt' };
+    }
+    logger.info(`[AI] Analyzing video content for: ${metadata.uploader}`);
+    const service = new AIService(apiKey);
+    const result = await service.analyzeVideoContent(metadata);
+    logger.info(`[AI] Video analysis complete: score=${result.viralityScore}`);
+    return { success: true, data: result };
+  } catch (err: any) {
+    logger.error(`[AI] Video analysis error: ${err}`);
+    return { success: false, error: err?.message || 'Lỗi phân tích AI' };
+  }
+});
+
+// Phân tích AI KOC
+ipcMain.handle('analyze-koc-ai', async (_event, data: KOCDataForAI) => {
+  try {
+    const apiKey = getSettingValue('anthropicApiKey');
+    if (!apiKey) {
+      return { success: false, error: 'Chưa cấu hình Anthropic API Key trong Settings' };
+    }
+    const licenseKey = getSettingValue('licenseKey');
+    if (!validateLicenseKey(licenseKey)) {
+      return { success: false, error: 'License key không hợp lệ hoặc chưa được kích hoạt' };
+    }
+    logger.info(`[AI] Analyzing KOC: @${data.username}`);
+    const service = new AIService(apiKey);
+    const result = await service.analyzeKOC(data);
+    logger.info(`[AI] KOC analysis complete: score=${result.overallScore}`);
+    return { success: true, data: result };
+  } catch (err: any) {
+    logger.error(`[AI] KOC analysis error: ${err}`);
+    return { success: false, error: err?.message || 'Lỗi phân tích KOC' };
   }
 });
 

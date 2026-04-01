@@ -20,6 +20,7 @@ export default defineConfig({
               external: [
                 'sql.js',
                 'canvas',
+                '@anthropic-ai/sdk',
                 // Electron externals
                 'electron',
                 'path',

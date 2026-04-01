@@ -39,6 +39,9 @@ function Dashboard() {
   // Auto-paste state
   const [autoPasteNotice, setAutoPasteNotice] = useState(false);
   const lastPastedUrl = useRef<string>('');
+  // FastMoss state
+  const [fastmossLoading, setFastmossLoading] = useState(false);
+  const [fastmossError, setFastmossError] = useState<string | null>(null);
 
   // ─── Auto-paste clipboard khi app được focus ───────────────────────────────
   const tryAutoPaste = useCallback(async () => {
@@ -152,6 +155,33 @@ function Dashboard() {
       setDownloading(false);
     }
   }, [metadata]);
+
+  // Mở FastMoss tìm KOC
+  const handleOpenFastMoss = useCallback(async () => {
+    if (!metadata) return;
+    setFastmossLoading(true);
+    setFastmossError(null);
+    try {
+      const result = await window.electronAPI.openFastMoss(url);
+      if (!result?.success) {
+        // Fallback: mở thẳng trình duyệt ngoài nếu không có cookies
+        const username = metadata.uploader || '';
+        const fallbackUrl = `https://www.fastmoss.com/vi/influencer/search?keyword=${encodeURIComponent(username)}`;
+        window.open(fallbackUrl, '_blank');
+        if (result?.error?.includes('cookie') || result?.error?.includes('Cookie')) {
+          setFastmossError('Chưa cấu hình cookies → đã mở FastMoss trên trình duyệt. Vào Settings để cấu hình cookies cho trải nghiệm tốt hơn.');
+        }
+      }
+    } catch {
+      // Nếu có lỗi bất ngờ, vẫn fallback ra browser
+      const username = metadata?.uploader || '';
+      window.open(`https://www.fastmoss.com/vi/influencer/search?keyword=${encodeURIComponent(username)}`, '_blank');
+    } finally {
+      setFastmossLoading(false);
+      // Tự xóa thông báo lỗi sau 5 giây
+      setTimeout(() => setFastmossError(null), 5000);
+    }
+  }, [url, metadata]);
 
   // Format duration
   const formatDuration = (seconds: number) => {
@@ -405,27 +435,42 @@ function Dashboard() {
 
               {/* FastMoss KOC Button */}
               {metadata && (
-                <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-purple-500/20 to-tiktok-cyan/20 p-[1px]">
-                  <div className="glass rounded-xl p-4 bg-black/40 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
-                        <Users className="w-4 h-4 text-purple-400" />
+                <div className="space-y-2">
+                  <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-purple-500/20 to-tiktok-cyan/20 p-[1px]">
+                    <div className="glass rounded-xl p-4 bg-black/40 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                          <Users className="w-4 h-4 text-purple-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-white">Tìm KOC trên FastMoss</p>
+                          <p className="text-xs text-white/50">
+                            Xem analytics của @{metadata.uploader}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-white">Tìm KOC trên FastMoss</p>
-                        <p className="text-xs text-white/50">
-                          Xem analytics của @{metadata.uploader}
-                        </p>
-                      </div>
+                      <button
+                        onClick={handleOpenFastMoss}
+                        disabled={fastmossLoading}
+                        className="flex items-center gap-1.5 text-sm font-medium text-tiktok-cyan hover:text-white transition-colors flex-shrink-0 disabled:opacity-50"
+                      >
+                        {fastmossLoading ? (
+                          <LoadingSpinner size="sm" />
+                        ) : (
+                          <>
+                            Mở FastMoss
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </>
+                        )}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => window.electronAPI.openFastMoss(url)}
-                      className="flex items-center gap-1.5 text-sm font-medium text-tiktok-cyan hover:text-white transition-colors flex-shrink-0"
-                    >
-                      Mở FastMoss
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
                   </div>
+                  {/* Thông báo lỗi/fallback */}
+                  {fastmossError && (
+                    <div className="px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 animate-fadeIn">
+                      <p className="text-xs text-yellow-400">{fastmossError}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
