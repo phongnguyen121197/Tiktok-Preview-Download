@@ -380,6 +380,7 @@ async function getVideoMetadata(url: string): Promise<VideoMetadata & { download
       description: data.title || '',
       uploader: data.author?.nickname || 'Unknown',
       uploaderId: data.author?.unique_id || '',
+      authorId: data.author?.id || '',
       duration: data.duration || 0,
       viewCount: data.play_count || 0,
       likeCount: data.digg_count || 0,

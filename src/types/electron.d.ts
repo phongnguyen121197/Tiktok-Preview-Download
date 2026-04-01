@@ -4,6 +4,7 @@ export interface VideoMetadata {
   description: string;
   uploader: string;
   uploaderId: string;
+  authorId?: string;
   duration: number;
   viewCount: number;
   likeCount: number;

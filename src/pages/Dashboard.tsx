@@ -43,6 +43,13 @@ function Dashboard() {
   const [fastmossLoading, setFastmossLoading] = useState(false);
   const [fastmossError, setFastmossError] = useState<string | null>(null);
 
+  // ─── Loại bỏ query params khỏi TikTok URL (chỉ giữ link chuẩn) ─────────────
+  const cleanTikTokUrl = (raw: string): string => {
+    const trimmed = raw.trim();
+    const qIdx = trimmed.indexOf('?');
+    return qIdx !== -1 ? trimmed.slice(0, qIdx) : trimmed;
+  };
+
   // ─── Auto-paste clipboard khi app được focus ───────────────────────────────
   const tryAutoPaste = useCallback(async () => {
     try {
@@ -51,14 +58,14 @@ function Dashboard() {
       if (autoPaste !== 'true') return;
 
       const text = await navigator.clipboard.readText();
-      const trimmed = text?.trim();
+      const cleaned = cleanTikTokUrl(text || '');
       if (
-        trimmed &&
-        TIKTOK_URL_REGEX.test(trimmed) &&
-        trimmed !== lastPastedUrl.current
+        cleaned &&
+        TIKTOK_URL_REGEX.test(cleaned) &&
+        cleaned !== lastPastedUrl.current
       ) {
-        lastPastedUrl.current = trimmed;
-        setUrl(trimmed);
+        lastPastedUrl.current = cleaned;
+        setUrl(cleaned);
         setAutoPasteNotice(true);
         setTimeout(() => setAutoPasteNotice(false), 2500);
       }
@@ -79,7 +86,7 @@ function Dashboard() {
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        setUrl(text.trim());
+        setUrl(cleanTikTokUrl(text));
       }
     } catch (err) {
       console.error('Failed to read clipboard:', err);
@@ -89,6 +96,9 @@ function Dashboard() {
   // Fetch video metadata
   const handleFetch = useCallback(async () => {
     if (!url.trim()) return;
+    // Clean URL trước khi xử lý
+    const cleanUrl = cleanTikTokUrl(url);
+    if (cleanUrl !== url) setUrl(cleanUrl);
     
     setLoading(true);
     setError(null);
@@ -98,22 +108,22 @@ function Dashboard() {
     
     try {
       // Validate URL first
-      const validation = await window.electronAPI.validateUrl(url);
+      const validation = await window.electronAPI.validateUrl(cleanUrl);
       if (!validation.valid) {
         throw new Error('Invalid TikTok URL. Please enter a valid video URL (e.g., https://www.tiktok.com/@user/video/1234567890)');
       }
-      
+
       // Fetch metadata
-      const result = await window.electronAPI.getVideoMetadata(url);
-      
+      const result = await window.electronAPI.getVideoMetadata(cleanUrl);
+
       if (!result.success || !result.data) {
         throw new Error(result.error || 'Failed to fetch video metadata');
       }
-      
+
       setMetadata(result.data);
-      
+
       // Fetch product info in parallel (non-blocking)
-      window.electronAPI.getProductInfo(url)
+      window.electronAPI.getProductInfo(cleanUrl)
         .then((info) => {
           console.log('[Dashboard] Product info result:', info);
           setProductInfo(info);
@@ -156,19 +166,27 @@ function Dashboard() {
     }
   }, [metadata]);
 
-  // Mở FastMoss tìm KOC
+  // Mở FastMoss tìm KOC — navigate thẳng trang detail bằng authorId
   const handleOpenFastMoss = useCallback(async () => {
     if (!metadata) return;
     setFastmossLoading(true);
     setFastmossError(null);
     try {
-      // Trích xuất username trực tiếp từ link video: sau dấu "@" và trước dấu "/"
+      // Ưu tiên navigate thẳng đến detail page bằng TikTok authorId
+      if (metadata.authorId) {
+        const detailUrl = `https://www.fastmoss.com/vi/influencer/detail/${metadata.authorId}`;
+        const result = await window.electronAPI.openFastMossDetail(detailUrl);
+        if (!result?.success) {
+          throw new Error(result?.error || 'Không thể mở FastMoss');
+        }
+        return;
+      }
+
+      // Fallback: search bằng username nếu không có authorId
       const usernameMatch = url.match(/@([^\/\?]+)\//);
       const username = usernameMatch ? usernameMatch[1] : (metadata?.uploader || '');
-
       const result = await window.electronAPI.openFastMoss(url, username);
       if (!result?.success) {
-        // Fallback: mở thẳng trình duyệt ngoài nếu không có cookies
         const fallbackUrl = `https://www.fastmoss.com/vi/influencer/search?keyword=${encodeURIComponent('@' + username)}`;
         window.open(fallbackUrl, '_blank');
         if (result?.error?.includes('cookie') || result?.error?.includes('Cookie')) {
@@ -176,13 +194,12 @@ function Dashboard() {
         }
       }
     } catch {
-      // Nếu có lỗi bất ngờ, vẫn fallback ra browser
+      // Fallback ra browser nếu có lỗi bất ngờ
       const usernameMatch = url.match(/@([^\/\?]+)\//);
       const username = usernameMatch ? usernameMatch[1] : (metadata?.uploader || '');
       window.open(`https://www.fastmoss.com/vi/influencer/search?keyword=${encodeURIComponent('@' + username)}`, '_blank');
     } finally {
       setFastmossLoading(false);
-      // Tự xóa thông báo lỗi sau 5 giây
       setTimeout(() => setFastmossError(null), 5000);
     }
   }, [url, metadata]);
@@ -229,7 +246,7 @@ function Dashboard() {
             <input
               type="text"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => setUrl(cleanTikTokUrl(e.target.value))}
               onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
               placeholder="https://www.tiktok.com/@user/video/..."
               className="input pr-12"
