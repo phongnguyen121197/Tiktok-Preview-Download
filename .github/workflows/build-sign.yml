@@ -1,0 +1,109 @@
+name: Build & Sign (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'           # Trigger khi push tag kiểu v1.0.0, v2.0.1...
+  workflow_dispatch:   # Cho phép chạy thủ công trên GitHub UI
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1: Build Electron app trên Windows
+  # ─────────────────────────────────────────────
+  build:
+    runs-on: windows-latest
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Electron app (Windows)
+        run: npm run build:win
+        env:
+          # Tắt auto signing của electron-builder (SignPath sẽ sign sau)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: List release files
+        run: ls release/
+
+      - name: Upload unsigned artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-win
+          # Upload file .exe installer (NSIS)
+          path: release/*.exe
+          retention-days: 1
+
+  # ─────────────────────────────────────────────
+  # JOB 2: Sign .exe bằng SignPath Foundation
+  # ─────────────────────────────────────────────
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Sign with SignPath Foundation
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token:                    ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id:              ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug:                 'TikTok_Preview_Download'
+          signing-policy-slug:          'test-signing'
+          artifact-configuration-slug:  'initial-version'
+          github-artifact-id:           ${{ needs.build.outputs.artifact-id }}
+          wait-for-completion:          true
+          output-artifact-directory:    release/signed
+
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-win
+          path: release/signed/*.exe
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # JOB 3: Tạo GitHub Release (chỉ khi push tag)
+  # ─────────────────────────────────────────────
+  release:
+    needs: sign
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download signed artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: signed-win
+          path: release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "TikTok Preview & Download ${{ github.ref_name }}"
+          body: |
+            ## TikTok Preview & Download ${{ github.ref_name }}
+
+            ### Cài đặt
+            1. Download file `.exe` bên dưới
+            2. Chạy installer
+            3. Nếu Windows SmartScreen hiện cảnh báo → click **"More info"** → **"Run anyway"**
+
+            ### Tính năng
+            - Preview & Download TikTok videos
+            - Influencer Analytics (FastMoss)
+            - Video History & Download Manager
+          files: release/*.exe
+          draft: false
+          prerelease: false
