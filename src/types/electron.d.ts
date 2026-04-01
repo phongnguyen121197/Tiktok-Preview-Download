@@ -158,7 +158,7 @@ declare global {
       getAppInfo: () => Promise<AppInfo>;
       onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void;
       // FastMoss APIs
-      openFastMoss: (tiktokUrl: string) => Promise<{ success: boolean; error?: string }>;
+      openFastMoss: (tiktokUrl: string, displayName?: string) => Promise<{ success: boolean; error?: string }>;
       openFastMossDetail: (detailUrl: string) => Promise<{ success: boolean; error?: string }>;
       checkFastMossCookies: () => Promise<{ valid: boolean; message: string }>;
       refreshFastMossSession: () => Promise<{ success: boolean; message?: string; error?: string }>;

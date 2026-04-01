@@ -902,46 +902,99 @@ ipcMain.handle('check-fastmoss-cookies', async () => {
   }
 });
 
+// Helper: inject search keyword vào FastMoss (React-compatible)
+async function injectFastMossSearch(webContents: Electron.WebContents, keyword: string) {
+  await new Promise(resolve => setTimeout(resolve, 1800));
+  const script = `
+    (function() {
+      try {
+        const input = document.querySelector('input.ant-input') ||
+                      document.querySelector('.ant-input-affix-wrapper input') ||
+                      document.querySelector('[placeholder*="Biệt danh"]') ||
+                      document.querySelector('[placeholder*="ID"]');
+        if (!input) { console.warn('[FM] Input not found'); return false; }
+
+        // React-compatible value setter
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        nativeSetter.call(input, ${JSON.stringify(keyword)});
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.focus();
+
+        // Click search button after short delay
+        setTimeout(() => {
+          const btn = document.querySelector('.ant-input-search-button') ||
+                      document.querySelector('.ant-input-group-addon button') ||
+                      document.querySelector('button.ant-btn-primary');
+          if (btn) { btn.click(); console.log('[FM] Search clicked'); }
+          else {
+            input.dispatchEvent(new KeyboardEvent('keydown', {
+              key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
+            }));
+            input.dispatchEvent(new KeyboardEvent('keyup', {
+              key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
+            }));
+            console.log('[FM] Enter dispatched as fallback');
+          }
+        }, 600);
+        return true;
+      } catch(e) { console.error('[FM] inject error:', e); return false; }
+    })();
+  `;
+  try {
+    await webContents.executeJavaScript(script);
+    logger.info(`[FastMoss] Search injected for: ${keyword}`);
+  } catch (err) {
+    logger.error(`[FastMoss] Inject error: ${err}`);
+  }
+}
+
 // Open FastMoss in a new window with cookies - SINGLE WINDOW MODE
-ipcMain.handle('open-fastmoss', async (_event, tiktokUrl: string) => {
-  logger.info(`Opening FastMoss for: ${tiktokUrl}`);
-  
+ipcMain.handle('open-fastmoss', async (_event, tiktokUrl: string, displayName?: string) => {
+  logger.info(`Opening FastMoss for: ${tiktokUrl}, displayName: ${displayName}`);
+
   try {
     if (!db) {
       return { success: false, error: 'Database not initialized' };
     }
-    
+
     // Get cookies from settings
     const result = db.exec('SELECT value FROM settings WHERE key = ?', ['fastmossCookies']);
     if (!result.length || !result[0].values.length || !result[0].values[0][0]) {
       return { success: false, error: 'Chưa cấu hình cookies FastMoss. Vui lòng vào Settings để cấu hình.' };
     }
-    
+
     const cookieString = result[0].values[0][0] as string;
     const cookies = parseFastMossCookies(cookieString);
-    
+
     if (cookies.length === 0) {
       return { success: false, error: 'Cookies FastMoss không hợp lệ. Vui lòng kiểm tra lại.' };
     }
-    
-    // Extract username from TikTok URL
+
+    // Ưu tiên displayName (tên hiển thị) nếu có, fallback về unique_id từ URL
     const match = tiktokUrl.match(/@([^\/\?]+)/);
-    const username = match ? match[1] : tiktokUrl.replace(/^@/, '');
-    
-    logger.info(`Extracted username: ${username}`);
-    
+    const uniqueId = match ? match[1] : tiktokUrl.replace(/^@/, '');
+    const searchKeyword = displayName || uniqueId;
+
+    logger.info(`Search keyword: "${searchKeyword}"`);
+
     // Load cookies vào shared session
     await loadFastMossCookiesToSession(cookies);
-    
-    const searchUrl = `https://www.fastmoss.com/vi/influencer/search?shop_window=1&keyword=${encodeURIComponent(username)}`;
-    
+
+    // Mở trang search với keyword trong URL (pre-fill)
+    const searchUrl = `https://www.fastmoss.com/vi/influencer/search?shop_window=1&keyword=${encodeURIComponent(searchKeyword)}`;
+
     // ⭐ SINGLE WINDOW MODE: Reuse existing window if available
     if (fastMossWindow && !fastMossWindow.isDestroyed()) {
       logger.info('Reusing existing FastMoss window');
-      fastMossWindow.setTitle(`FastMoss - @${username}`);
-      await fastMossWindow.loadURL(searchUrl);
+      fastMossWindow.setTitle(`FastMoss - ${searchKeyword}`);
       fastMossWindow.show();
       fastMossWindow.focus();
+      await fastMossWindow.loadURL(searchUrl);
+      // Inject auto-search sau khi page load
+      fastMossWindow.webContents.once('did-finish-load', async () => {
+        await injectFastMossSearch(fastMossWindow!.webContents, searchKeyword);
+      });
       return { success: true };
     }
     
@@ -1002,55 +1055,12 @@ ipcMain.handle('open-fastmoss', async (_event, tiktokUrl: string) => {
       fastMossWindow = null;
     });
     
-    // After page loads, auto-click search button
+    // After page loads, auto-fill + auto-search
     newWindow.webContents.on('did-finish-load', async () => {
       const currentUrl = newWindow.webContents.getURL();
       logger.info(`FastMoss page loaded: ${currentUrl}`);
-      
-      // Only run on search page
-      if (!currentUrl.includes('/influencer/search')) {
-        return;
-      }
-      
-      // Wait for page to render
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Auto-click search button
-      const clickSearchScript = `
-        (function() {
-          console.log('FastMoss: Auto-clicking search button...');
-          
-          const searchBtn = document.querySelector('.ant-input-search-button') ||
-                           document.querySelector('button.ant-btn-primary') ||
-                           document.querySelector('.ant-input-group-addon button');
-          
-          if (searchBtn) {
-            console.log('FastMoss: Found search button, clicking...');
-            searchBtn.click();
-          } else {
-            console.log('FastMoss: Search button not found');
-            
-            const input = document.querySelector('input.ant-input');
-            if (input) {
-              input.focus();
-              input.dispatchEvent(new KeyboardEvent('keydown', {
-                key: 'Enter',
-                code: 'Enter',
-                keyCode: 13,
-                which: 13,
-                bubbles: true
-              }));
-            }
-          }
-        })();
-      `;
-      
-      try {
-        await newWindow.webContents.executeJavaScript(clickSearchScript);
-        logger.info('Auto-click search script executed');
-      } catch (err) {
-        logger.error(`Auto-click script error: ${err}`);
-      }
+      if (!currentUrl.includes('/influencer/search')) return;
+      await injectFastMossSearch(newWindow.webContents, searchKeyword);
     });
     
     await newWindow.loadURL(searchUrl);

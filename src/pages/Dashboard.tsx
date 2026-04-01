@@ -162,7 +162,7 @@ function Dashboard() {
     setFastmossLoading(true);
     setFastmossError(null);
     try {
-      const result = await window.electronAPI.openFastMoss(url);
+      const result = await window.electronAPI.openFastMoss(url, metadata?.uploader);
       if (!result?.success) {
         // Fallback: mở thẳng trình duyệt ngoài nếu không có cookies
         const username = metadata.uploader || '';

@@ -40,7 +40,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   
   // FastMoss APIs
-  openFastMoss: (tiktokUrl: string) => ipcRenderer.invoke('open-fastmoss', tiktokUrl),
+  openFastMoss: (tiktokUrl: string, displayName?: string) => ipcRenderer.invoke('open-fastmoss', tiktokUrl, displayName),
   openFastMossDetail: (detailUrl: string) => ipcRenderer.invoke('open-fastmoss-detail', detailUrl),
   checkFastMossCookies: () => ipcRenderer.invoke('check-fastmoss-cookies'),
   refreshFastMossSession: () => ipcRenderer.invoke('refresh-fastmoss-session'),
