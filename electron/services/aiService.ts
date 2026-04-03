@@ -149,7 +149,7 @@ Trả về JSON hợp lệ (KHÔNG có markdown, KHÔNG có backtick):
       : [{ role: 'user', content: prompt }];
 
     const response = await this.client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
       messages
     });
@@ -160,69 +160,89 @@ Trả về JSON hợp lệ (KHÔNG có markdown, KHÔNG có backtick):
   }
 
   /**
-   * Phân tích tiềm năng KOC dựa trên số liệu video
+   * Phân tích KOC toàn diện từ dữ liệu FastMoss đã scrape
    */
-  async analyzeKOC(data: KOCDataForAI): Promise<KOCAIAnalysis> {
-    const engagementRate = data.viewCount > 0
-      ? ((data.likeCount + data.commentCount) / data.viewCount * 100).toFixed(2)
-      : '0';
+  async analyzeKOCFromFastMoss(scrapeData: any, computed: any): Promise<any> {
+    const { overview, audience, sales, username } = scrapeData;
 
-    // Ước tính tier dựa trên view count (proxy cho followers)
-    const estimatedFollowers = data.estimatedFollowers
-      || Math.round(data.viewCount * 0.15); // rough estimate
+    const prompt = `Bạn là chuyên gia phân tích KOC (Key Opinion Consumer) cho thị trường TikTok Shop Việt Nam.
+Hãy phân tích toàn diện KOC @${username} dựa trên dữ liệu thực từ FastMoss và trả về JSON.
 
-    let tier = 'micro';
-    if (estimatedFollowers < 10000) tier = 'nano';
-    else if (estimatedFollowers < 100000) tier = 'micro';
-    else if (estimatedFollowers < 500000) tier = 'mid';
-    else if (estimatedFollowers < 1000000) tier = 'macro';
-    else tier = 'mega';
+═══ DỮ LIỆU NĂNG LỰC BÁN HÀNG ═══
+- GMV tổng (toàn kênh): ${overview.gmv_total}
+- GMV từ video: ${overview.gmv_video}
+- GMV từ livestream: ${overview.gmv_livestream}
+- GPM Video TMĐT (28 ngày): ${overview.gpm_video_28d}
+- Tổng video: ${overview.total_videos} (bán hàng: ${overview.sales_videos} | nội dung: ${overview.non_sales_videos})
+- Tỷ lệ video bán hàng: ${computed.video_sales_ratio}
+- Est. GMV/video bán hàng: ${computed.est_gmv_per_video}
+- Số cửa hàng đã hợp tác: ${sales.partner_stores}
+- Tổng sản phẩm quảng cáo: ${sales.total_products}
+- Top ngành hàng: ${sales.top_categories?.map((c: any) => `${c.name} ${c.percent}`).join(', ')}
 
-    const prompt = `Bạn là chuyên gia phân tích KOC (Key Opinion Consumer) cho thị trường TikTok Việt Nam và TikTok Shop.
+TOP 5 VIDEO DOANH THU CAO NHẤT:
+${sales.top_videos?.slice(0, 5).map((v: any, i: number) =>
+  `${i + 1}. "${v.title}" | Doanh thu: ${v.revenue} | Views: ${v.views} | ER: ${v.engagement_rate} | SP: ${v.product_name}`
+).join('\n')}
 
-THÔNG TIN CREATOR:
-- Username: @${data.username}
-- Video: "${data.videoTitle || data.videoDescription?.slice(0, 100) || '(không có tiêu đề)'}"
-- Lượt xem: ${data.viewCount.toLocaleString()}
-- Lượt thích: ${data.likeCount.toLocaleString()}
-- Bình luận: ${data.commentCount.toLocaleString()}
-- Chia sẻ: ${data.shareCount.toLocaleString()}
-- Tỷ lệ engagement: ${engagementRate}%
-- Thời lượng video: ${data.duration}s
-- Ước tính followers: ${estimatedFollowers.toLocaleString()}
-- Tier ước tính: ${tier}
-${data.niche ? `- Niche: ${data.niche}` : ''}
+═══ DỮ LIỆU KHÁN GIẢ ═══
+- Giới tính: Nam ${audience.gender_male} / Nữ ${audience.gender_female}
+- Độ tuổi: 18-24: ${audience.age_18_24} | 25-34: ${audience.age_25_34} | 35-44: ${audience.age_35_44} | 45+: ${audience.age_45_plus}
+- Khu vực top: ${audience.region_top?.map((r: any) => `${r.name} ${r.percent}`).join(', ')}
+- Fan tích cực: ${audience.fan_active} | Fan tiềm năng: ${audience.fan_potential}
 
-TIÊU CHÍ ĐÁNH GIÁ KOC:
-- Engagement rate tốt: 3-8% (xuất sắc: >8%)
-- Tỷ lệ comment/like tốt: >5% (cho thấy tương tác thật)
-- Nano/Micro KOC (10K-100K) thường có engagement cao hơn
-- Share rate cao cho thấy nội dung có giá trị lan truyền
+═══ DỮ LIỆU CHẤT LƯỢNG NỘI DUNG ═══
+- Trung vị lượt xem: ${overview.median_views}
+- Tỷ lệ tương tác TB: ${overview.avg_engagement_rate}
+- Tổng lượt phát: ${overview.total_plays}
+- Est. GMV/video: ${computed.est_gmv_per_video}
+- TB doanh thu top 5 video: ${computed.avg_revenue_top5}
 
-Trả về JSON hợp lệ (KHÔNG có markdown):
+═══ TIÊU CHÍ ĐÁNH GIÁ ═══
+- ER xuất sắc: >8% | Tốt: 3-8% | Trung bình: 1-3%
+- Tỷ lệ video bán hàng tốt: >10%
+- Nano KOC (<10K followers) | Micro (10K-100K) | Mid (100K-500K) | Macro (500K-1M) | Mega (>1M)
+
+Trả về JSON hợp lệ (KHÔNG markdown, KHÔNG backtick):
 {
-  "overallScore": 0-100,
-  "recommendation": "excellent|good|fair|poor",
-  "conversionPotential": 0-100,
-  "audienceQuality": 0-100,
-  "contentConsistency": 0-100,
-  "monetizationReady": true|false,
-  "tier": "nano|micro|mid|macro|mega",
-  "strengths": ["điểm mạnh 1", "điểm mạnh 2", "điểm mạnh 3"],
-  "weaknesses": ["điểm yếu 1", "điểm yếu 2"],
-  "reasoning": "1-2 câu nhận xét tổng quan bằng tiếng Việt",
-  "suggestions": ["gợi ý cho brand khi hợp tác 1", "gợi ý 2"]
+  "sales_capability": {
+    "score": 0-100,
+    "summary": "1 câu tóm tắt tiếng Việt",
+    "ai_comment": "2-3 câu phân tích chi tiết tiếng Việt",
+    "highlights": ["điểm nổi bật 1", "điểm nổi bật 2", "điểm nổi bật 3"]
+  },
+  "audience_quality": {
+    "score": 0-100,
+    "summary": "1 câu tóm tắt tiếng Việt",
+    "ai_comment": "2-3 câu phân tích chi tiết tiếng Việt",
+    "highlights": ["điểm nổi bật 1", "điểm nổi bật 2"]
+  },
+  "content_quality": {
+    "score": 0-100,
+    "summary": "1 câu tóm tắt tiếng Việt",
+    "ai_comment": "2-3 câu phân tích chi tiết tiếng Việt",
+    "highlights": ["điểm nổi bật 1", "điểm nổi bật 2"]
+  },
+  "brand_recommendation": {
+    "overall_score": 0-100,
+    "tier": "nano|micro|mid|macro|mega",
+    "recommendation": "excellent|good|fair|poor",
+    "fit_categories": ["ngành hàng phù hợp 1", "ngành hàng phù hợp 2"],
+    "content_strategy": ["loại nội dung nên làm 1", "loại nội dung nên làm 2"],
+    "suggestions": ["gợi ý cho brand 1", "gợi ý cho brand 2", "gợi ý cho brand 3"],
+    "risks": ["rủi ro/lưu ý 1", "rủi ro/lưu ý 2"]
+  }
 }`;
 
     const response = await this.client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 800,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }]
     });
 
     const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
     const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
-    return JSON.parse(cleaned) as KOCAIAnalysis;
+    return JSON.parse(cleaned);
   }
 }
 

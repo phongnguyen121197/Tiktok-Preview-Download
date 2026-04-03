@@ -134,6 +134,108 @@ export interface ProductInfo {
   anchorType?: string;
 }
 
+// ─── KOC AI Analysis Types ────────────────────────────────────────────────
+
+export interface KOCOverview {
+  gmv_total: string;
+  gmv_video: string;
+  gmv_livestream: string;
+  gpm_video_28d: string;
+  total_videos: string;
+  sales_videos: string;
+  non_sales_videos: string;
+  total_plays: string;
+  median_views: string;
+  avg_engagement_rate: string;
+  livestream_count: string;
+  livestream_avg_revenue: string;
+}
+
+export interface KOCAudience {
+  gender_male: string;
+  gender_female: string;
+  age_18_24: string;
+  age_25_34: string;
+  age_35_44: string;
+  age_45_plus: string;
+  region_top: Array<{ name: string; percent: string }>;
+  fan_active: string;
+  fan_potential: string;
+}
+
+export interface KOCTopVideo {
+  title: string;
+  duration: string;
+  sales_count: string;
+  revenue: string;
+  views: string;
+  engagement_rate: string;
+  product_name: string;
+  category: string;
+}
+
+export interface KOCSales {
+  partner_stores: string;
+  total_products: string;
+  total_sales: string;
+  total_gmv: string;
+  top_categories: Array<{ name: string; percent: string }>;
+  top_videos: KOCTopVideo[];
+}
+
+export interface KOCScrapeData {
+  username: string;
+  authorId: string;
+  scrapedAt: string;
+  overview: KOCOverview;
+  audience: KOCAudience;
+  sales: KOCSales;
+}
+
+export interface KOCAnalysisBrand {
+  overall_score: number;
+  tier: 'nano' | 'micro' | 'mid' | 'macro' | 'mega';
+  recommendation: 'excellent' | 'good' | 'fair' | 'poor';
+  fit_categories: string[];
+  content_strategy: string[];
+  suggestions: string[];
+  risks: string[];
+}
+
+export interface KOCAnalysisSection {
+  score: number;
+  summary: string;
+  ai_comment: string;
+  highlights: string[];
+}
+
+export interface KOCAnalysisResult {
+  id: string;
+  username: string;
+  authorId: string;
+  createdAt: string;
+  scrapeData: KOCScrapeData;
+  computed: {
+    video_sales_ratio: string;
+    est_gmv_per_video: string;
+    avg_revenue_top5: string;
+  };
+  analysis: {
+    sales_capability: KOCAnalysisSection;
+    audience_quality: KOCAnalysisSection;
+    content_quality: KOCAnalysisSection;
+    brand_recommendation: KOCAnalysisBrand;
+  };
+}
+
+export interface KOCProgressEvent {
+  step: number;
+  totalSteps: number;
+  label: string;
+  percent: number;
+  status: 'running' | 'done' | 'error';
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -163,6 +265,11 @@ declare global {
       openFastMossDetail: (detailUrl: string) => Promise<{ success: boolean; error?: string }>;
       checkFastMossCookies: () => Promise<{ valid: boolean; message: string }>;
       refreshFastMossSession: () => Promise<{ success: boolean; message?: string; error?: string }>;
+      // KOC AI Analysis
+      analyzeKOC: (authorId: string, username: string) => Promise<{ success: boolean; data?: KOCAnalysisResult; error?: string }>;
+      getKOCHistory: (limit?: number) => Promise<{ success: boolean; data?: KOCAnalysisResult[]; error?: string }>;
+      exportKOCReport: (reportId: string) => Promise<{ success: boolean; error?: string }>;
+      onKOCProgress: (callback: (progress: KOCProgressEvent) => void) => () => void;
       // TikTok Shop Product Info
       getProductInfo: (videoUrl: string) => Promise<ProductInfo>;
     };

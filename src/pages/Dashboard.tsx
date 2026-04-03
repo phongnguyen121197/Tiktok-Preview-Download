@@ -22,6 +22,7 @@ import Card from '../components/ui/Card';
 import VideoPlayer from '../components/ui/VideoPlayer';
 import { LoadingSpinner, MetadataSkeleton } from '../components/ui/Loading';
 import { VideoMetadata, ProductInfo } from '../types/electron.d';
+import KOCSlidePanel from '../components/ai/KOCSlidePanel';
 
 // Regex nhận diện TikTok URL hợp lệ
 const TIKTOK_URL_REGEX = /https?:\/\/(www\.|vm\.|vt\.)?tiktok\.com\/.+/i;
@@ -42,6 +43,8 @@ function Dashboard() {
   // FastMoss state
   const [fastmossLoading, setFastmossLoading] = useState(false);
   const [fastmossError, setFastmossError] = useState<string | null>(null);
+  // KOC AI Panel
+  const [kocPanelOpen, setKocPanelOpen] = useState(false);
 
   // ─── Loại bỏ query params khỏi TikTok URL (chỉ giữ link chuẩn) ─────────────
   const cleanTikTokUrl = (raw: string): string => {
@@ -454,45 +457,60 @@ function Dashboard() {
                 </div>
               )}
 
-              {/* FastMoss KOC Button */}
+              {/* FastMoss + AI KOC Buttons */}
               {metadata && (
                 <div className="space-y-2">
                   <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-purple-500/20 to-tiktok-cyan/20 p-[1px]">
-                    <div className="glass rounded-xl p-4 bg-black/40 flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
+                    <div className="glass rounded-xl p-4 bg-black/40 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
                           <Users className="w-4 h-4 text-purple-400" />
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-white">Tìm KOC trên FastMoss</p>
-                          <p className="text-xs text-white/50">
-                            Xem analytics của @{metadata.uploader}
-                          </p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white">KOC Analytics</p>
+                          <p className="text-xs text-white/50 truncate">@{metadata.uploaderId || metadata.uploader}</p>
                         </div>
                       </div>
-                      <button
-                        onClick={handleOpenFastMoss}
-                        disabled={fastmossLoading}
-                        className="flex items-center gap-1.5 text-sm font-medium text-tiktok-cyan hover:text-white transition-colors flex-shrink-0 disabled:opacity-50"
-                      >
-                        {fastmossLoading ? (
-                          <LoadingSpinner size="sm" />
-                        ) : (
-                          <>
-                            Mở FastMoss
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* AI Phân Tích KOC */}
+                        <button
+                          onClick={() => setKocPanelOpen(true)}
+                          disabled={!metadata.authorId}
+                          title={!metadata.authorId ? 'Không có authorId' : 'AI phân tích KOC từ FastMoss'}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <span>🤖</span>
+                          AI KOC
+                        </button>
+                        {/* Mở FastMoss */}
+                        <button
+                          onClick={handleOpenFastMoss}
+                          disabled={fastmossLoading}
+                          className="flex items-center gap-1.5 text-sm font-medium text-tiktok-cyan hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          {fastmossLoading ? <LoadingSpinner size="sm" /> : (
+                            <><ExternalLink className="w-3.5 h-3.5" />FastMoss</>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  {/* Thông báo lỗi/fallback */}
                   {fastmossError && (
                     <div className="px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 animate-fadeIn">
                       <p className="text-xs text-yellow-400">{fastmossError}</p>
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* KOC Slide Panel */}
+              {metadata?.authorId && (
+                <KOCSlidePanel
+                  open={kocPanelOpen}
+                  onClose={() => setKocPanelOpen(false)}
+                  authorId={metadata.authorId}
+                  username={metadata.uploaderId || metadata.uploader}
+                />
               )}
 
               {/* Actions */}

@@ -45,9 +45,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkFastMossCookies: () => ipcRenderer.invoke('check-fastmoss-cookies'),
   refreshFastMossSession: () => ipcRenderer.invoke('refresh-fastmoss-session'),
   
+  // KOC AI Analysis
+  analyzeKOC: (authorId: string, username: string) => ipcRenderer.invoke('analyze-koc', authorId, username),
+  getKOCHistory: (limit?: number) => ipcRenderer.invoke('get-koc-history', limit),
+  exportKOCReport: (reportId: string) => ipcRenderer.invoke('export-koc-report', reportId),
+  onKOCProgress: (callback: (progress: any) => void) => {
+    const sub = (_: Electron.IpcRendererEvent, progress: any) => callback(progress);
+    ipcRenderer.on('koc-progress', sub);
+    return () => ipcRenderer.removeListener('koc-progress', sub);
+  },
+
   // TikTok Shop Product Info
   getProductInfo: (videoUrl: string) => ipcRenderer.invoke('get-product-info', videoUrl),
-  
+
   // Event listeners
   onDownloadProgress: (callback: (progress: DownloadProgress) => void) => {
     const subscription = (_event: Electron.IpcRendererEvent, progress: DownloadProgress) => {
