@@ -119,7 +119,7 @@ function ProgressView({ progress, username }: { progress: KOCProgressEvent | nul
           <div>
             <h2 className="font-display font-semibold text-white">AI đang phân tích @{username}</h2>
             <p className="text-sm text-white/50">
-              Bạn có thể xem số liệu trên cửa sổ FastMoss trong lúc chờ nhé!
+              Đang thu thập dữ liệu từ FastMoss và phân tích, vui lòng chờ...
             </p>
           </div>
         </div>
@@ -519,7 +519,6 @@ export default function KOCAnalysis() {
         </div>
         <div>
           <h2 className="font-display font-bold text-white text-xl">Phân tích KOC cùng AI</h2>
-          <p className="text-sm text-white/50">Phân tích toàn diện dữ liệu KOC từ FastMoss với Claude Haiku 4.5</p>
         </div>
       </div>
 

@@ -25,6 +25,7 @@ import VideoPlayer from '../components/ui/VideoPlayer';
 import { LoadingSpinner, MetadataSkeleton } from '../components/ui/Loading';
 import { VideoMetadata, ProductInfo } from '../types/electron.d';
 import { useKOCStore } from '../stores/kocStore';
+import { useDashboardStore } from '../stores/dashboardStore';
 
 // Regex nhận diện TikTok URL hợp lệ
 const TIKTOK_URL_REGEX = /https?:\/\/(www\.|vm\.|vt\.)?tiktok\.com\/.+/i;
@@ -32,15 +33,19 @@ const TIKTOK_URL_REGEX = /https?:\/\/(www\.|vm\.|vt\.)?tiktok\.com\/.+/i;
 function Dashboard() {
   const navigate = useNavigate();
   const { setTarget: setKOCTarget } = useKOCStore();
-  const [url, setUrl] = useState('');
+
+  // ─── Persistent state (survives navigation) ───────────────────────────────
+  const {
+    url, setUrl,
+    metadata, setMetadata,
+    productInfo, setProductInfo,
+    productLoading, setProductLoading,
+    error, setError,
+  } = useDashboardStore();
+
+  // ─── Transient state (reset on remount is fine) ───────────────────────────
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [metadata, setMetadata] = useState<VideoMetadata | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const [downloadStarted, setDownloadStarted] = useState(false);
-  // Product info state
-  const [productInfo, setProductInfo] = useState<ProductInfo | null>(null);
-  const [productLoading, setProductLoading] = useState(false);
   // Auto-paste state
   const [autoPasteNotice, setAutoPasteNotice] = useState(false);
   const lastPastedUrl = useRef<string>('');
@@ -104,13 +109,13 @@ function Dashboard() {
     // Clean URL trước khi xử lý
     const cleanUrl = cleanTikTokUrl(url);
     if (cleanUrl !== url) setUrl(cleanUrl);
-    
+
     setLoading(true);
     setError(null);
     setMetadata(null);
     setProductInfo(null);
     setProductLoading(true);
-    
+
     try {
       // Validate URL first
       const validation = await window.electronAPI.validateUrl(cleanUrl);
@@ -125,28 +130,28 @@ function Dashboard() {
         throw new Error(result.error || 'Failed to fetch video metadata');
       }
 
-      setMetadata(result.data);
+      setMetadata(result.data as VideoMetadata);
 
       // Fetch product info in parallel (non-blocking)
       window.electronAPI.getProductInfo(cleanUrl)
-        .then((info) => {
+        .then((info: ProductInfo) => {
           console.log('[Dashboard] Product info result:', info);
           setProductInfo(info);
         })
-        .catch((err) => {
+        .catch((err: Error) => {
           console.error('[Dashboard] Product info error:', err);
         })
         .finally(() => {
           setProductLoading(false);
         });
-        
+
     } catch (err) {
       setError((err as Error).message);
       setProductLoading(false);
     } finally {
       setLoading(false);
     }
-  }, [url]);
+  }, [url, setUrl, setError, setMetadata, setProductInfo, setProductLoading]);
 
   // Download video
   const handleDownload = useCallback(async () => {
