@@ -1507,16 +1507,21 @@ ipcMain.handle('analyze-koc', async (event, authorId: string, username: string) 
     const cookies = parseFastMossCookies(cookieResult[0].values[0][0] as string);
     await loadFastMossCookiesToSession(cookies);
 
-    // ── Bước 1: Mở FastMoss detail page ─────────────────────────────────────
+    // ── Bước 1: Mở FastMoss detail page (cửa sổ riêng — app vẫn ở trang KOC) ─
     sendProgress(1, 5, 'Đang mở trang KOC trên FastMoss...', 5);
     const detailUrl = `https://www.fastmoss.com/vi/influencer/detail/${authorId}`;
 
+    // Tạo hoặc tái sử dụng FastMoss window
     if (!fastMossWindow || fastMossWindow.isDestroyed()) {
       const win = new BrowserWindow({
         width: 1400, height: 900, minWidth: 1000, minHeight: 700,
         title: `FastMoss - @${username}`,
-        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: false, partition: FASTMOSS_PARTITION },
-        backgroundColor: '#ffffff', show: true
+        webPreferences: {
+          nodeIntegration: false, contextIsolation: true,
+          sandbox: false, partition: FASTMOSS_PARTITION
+        },
+        backgroundColor: '#ffffff',
+        show: false  // Hiện sau khi load xong để tránh flash
       });
       fastMossWindow = win;
       win.webContents.setWindowOpenHandler(({ url }) => {
@@ -1525,19 +1530,24 @@ ipcMain.handle('analyze-koc', async (event, authorId: string, username: string) 
         return { action: 'deny' };
       });
       win.on('closed', () => { fastMossWindow = null; });
-      await win.loadURL(detailUrl);
+      // Load URL rồi show — window nổi lên độc lập, app renderer không bị ảnh hưởng
+      win.loadURL(detailUrl);
+      win.once('ready-to-show', () => win.show());
     } else {
+      // Đã có window: navigate đến trang mới rồi focus
+      fastMossWindow.loadURL(detailUrl);
       fastMossWindow.show();
       fastMossWindow.focus();
-      await fastMossWindow.loadURL(detailUrl);
     }
 
-    // Chờ page load xong
+    // Chờ FastMoss page load (timeout 10s, không block nếu chậm)
     await new Promise<void>((resolve) => {
-      const timeout = setTimeout(resolve, 8000);
-      fastMossWindow!.webContents.once('did-finish-load', () => {
+      if (!fastMossWindow || fastMossWindow.isDestroyed()) { resolve(); return; }
+      const timeout = setTimeout(resolve, 10000);
+      fastMossWindow.webContents.once('did-finish-load', () => {
         clearTimeout(timeout);
-        setTimeout(resolve, 2000);
+        // Thêm 2.5s cho React hydrate & dữ liệu async FastMoss render
+        setTimeout(resolve, 2500);
       });
     });
 

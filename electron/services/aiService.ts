@@ -150,13 +150,12 @@ Trả về JSON hợp lệ (KHÔNG có markdown, KHÔNG có backtick):
 
     const response = await this.client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      max_tokens: 1500,
       messages
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
-    const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
-    return JSON.parse(cleaned) as VideoAIAnalysis;
+    const raw = response.content[0].type === 'text' ? response.content[0].text : '{}';
+    return extractJSON(raw) as VideoAIAnalysis;
   }
 
   /**
@@ -165,85 +164,121 @@ Trả về JSON hợp lệ (KHÔNG có markdown, KHÔNG có backtick):
   async analyzeKOCFromFastMoss(scrapeData: any, computed: any): Promise<any> {
     const { overview, audience, sales, username } = scrapeData;
 
-    const prompt = `Bạn là chuyên gia phân tích KOC (Key Opinion Consumer) cho thị trường TikTok Shop Việt Nam.
-Hãy phân tích toàn diện KOC @${username} dựa trên dữ liệu thực từ FastMoss và trả về JSON.
+    // Rút gọn top videos để tránh token overflow
+    const topVidsText = (sales.top_videos?.slice(0, 3) || [])
+      .map((v: any, i: number) =>
+        `${i + 1}. "${String(v.title || '').slice(0, 40)}" | DT: ${v.revenue || 'N/A'} | Views: ${v.views || 'N/A'}`
+      ).join('\n') || '(không có dữ liệu)';
 
-═══ DỮ LIỆU NĂNG LỰC BÁN HÀNG ═══
-- GMV tổng (toàn kênh): ${overview.gmv_total}
-- GMV từ video: ${overview.gmv_video}
-- GMV từ livestream: ${overview.gmv_livestream}
-- GPM Video TMĐT (28 ngày): ${overview.gpm_video_28d}
-- Tổng video: ${overview.total_videos} (bán hàng: ${overview.sales_videos} | nội dung: ${overview.non_sales_videos})
-- Tỷ lệ video bán hàng: ${computed.video_sales_ratio}
-- Est. GMV/video bán hàng: ${computed.est_gmv_per_video}
-- Số cửa hàng đã hợp tác: ${sales.partner_stores}
-- Tổng sản phẩm quảng cáo: ${sales.total_products}
-- Top ngành hàng: ${sales.top_categories?.map((c: any) => `${c.name} ${c.percent}`).join(', ')}
+    const topCatsText = (sales.top_categories?.slice(0, 4) || [])
+      .map((c: any) => `${c.name} ${c.percent}`).join(', ') || 'N/A';
 
-TOP 5 VIDEO DOANH THU CAO NHẤT:
-${sales.top_videos?.slice(0, 5).map((v: any, i: number) =>
-  `${i + 1}. "${v.title}" | Doanh thu: ${v.revenue} | Views: ${v.views} | ER: ${v.engagement_rate} | SP: ${v.product_name}`
-).join('\n')}
+    const prompt = `Bạn là chuyên gia phân tích KOC TikTok Shop Việt Nam. Phân tích @${username} từ dữ liệu FastMoss, trả về JSON ngắn gọn.
 
-═══ DỮ LIỆU KHÁN GIẢ ═══
-- Giới tính: Nam ${audience.gender_male} / Nữ ${audience.gender_female}
-- Độ tuổi: 18-24: ${audience.age_18_24} | 25-34: ${audience.age_25_34} | 35-44: ${audience.age_35_44} | 45+: ${audience.age_45_plus}
-- Khu vực top: ${audience.region_top?.map((r: any) => `${r.name} ${r.percent}`).join(', ')}
-- Fan tích cực: ${audience.fan_active} | Fan tiềm năng: ${audience.fan_potential}
+DỮ LIỆU:
+GMV: ${overview.gmv_total || 'N/A'} | Video: ${overview.gmv_video || 'N/A'} | Live: ${overview.gmv_livestream || 'N/A'}
+GPM 28 ngày: ${overview.gpm_video_28d || 'N/A'} | Videos: ${overview.total_videos || 'N/A'} (BH: ${overview.sales_videos || 'N/A'})
+Tỷ lệ BH: ${computed.video_sales_ratio} | Est GMV/video: ${computed.est_gmv_per_video}
+Shops: ${sales.partner_stores || 'N/A'} | Sản phẩm: ${sales.total_products || 'N/A'}
+Ngành: ${topCatsText}
+Top videos: ${topVidsText}
+Khán giả: Nam ${audience.gender_male || 'N/A'} / Nữ ${audience.gender_female || 'N/A'}
+Tuổi: 18-24: ${audience.age_18_24 || 'N/A'} | 25-34: ${audience.age_25_34 || 'N/A'} | 35+: ${audience.age_35_44 || 'N/A'}
+ER TB: ${overview.avg_engagement_rate || 'N/A'} | Trung vị views: ${overview.median_views || 'N/A'}
 
-═══ DỮ LIỆU CHẤT LƯỢNG NỘI DUNG ═══
-- Trung vị lượt xem: ${overview.median_views}
-- Tỷ lệ tương tác TB: ${overview.avg_engagement_rate}
-- Tổng lượt phát: ${overview.total_plays}
-- Est. GMV/video: ${computed.est_gmv_per_video}
-- TB doanh thu top 5 video: ${computed.avg_revenue_top5}
-
-═══ TIÊU CHÍ ĐÁNH GIÁ ═══
-- ER xuất sắc: >8% | Tốt: 3-8% | Trung bình: 1-3%
-- Tỷ lệ video bán hàng tốt: >10%
-- Nano KOC (<10K followers) | Micro (10K-100K) | Mid (100K-500K) | Macro (500K-1M) | Mega (>1M)
-
-Trả về JSON hợp lệ (KHÔNG markdown, KHÔNG backtick):
-{
-  "sales_capability": {
-    "score": 0-100,
-    "summary": "1 câu tóm tắt tiếng Việt",
-    "ai_comment": "2-3 câu phân tích chi tiết tiếng Việt",
-    "highlights": ["điểm nổi bật 1", "điểm nổi bật 2", "điểm nổi bật 3"]
-  },
-  "audience_quality": {
-    "score": 0-100,
-    "summary": "1 câu tóm tắt tiếng Việt",
-    "ai_comment": "2-3 câu phân tích chi tiết tiếng Việt",
-    "highlights": ["điểm nổi bật 1", "điểm nổi bật 2"]
-  },
-  "content_quality": {
-    "score": 0-100,
-    "summary": "1 câu tóm tắt tiếng Việt",
-    "ai_comment": "2-3 câu phân tích chi tiết tiếng Việt",
-    "highlights": ["điểm nổi bật 1", "điểm nổi bật 2"]
-  },
-  "brand_recommendation": {
-    "overall_score": 0-100,
-    "tier": "nano|micro|mid|macro|mega",
-    "recommendation": "excellent|good|fair|poor",
-    "fit_categories": ["ngành hàng phù hợp 1", "ngành hàng phù hợp 2"],
-    "content_strategy": ["loại nội dung nên làm 1", "loại nội dung nên làm 2"],
-    "suggestions": ["gợi ý cho brand 1", "gợi ý cho brand 2", "gợi ý cho brand 3"],
-    "risks": ["rủi ro/lưu ý 1", "rủi ro/lưu ý 2"]
-  }
-}`;
+Trả về JSON (KHÔNG markdown, KHÔNG backtick, giữ text NGẮN - tối đa 60 ký tự/string):
+{"sales_capability":{"score":0,"summary":"text","ai_comment":"text","highlights":["h1","h2"]},"audience_quality":{"score":0,"summary":"text","ai_comment":"text","highlights":["h1","h2"]},"content_quality":{"score":0,"summary":"text","ai_comment":"text","highlights":["h1","h2"]},"brand_recommendation":{"overall_score":0,"tier":"nano","recommendation":"good","fit_categories":["cat1"],"content_strategy":["s1"],"suggestions":["s1","s2"],"risks":["r1"]}}`;
 
     const response = await this.client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
+      max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }]
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
-    const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
-    return JSON.parse(cleaned);
+    const raw = response.content[0].type === 'text' ? response.content[0].text : '{}';
+    return extractJSON(raw);
   }
+}
+
+// ─── JSON Extractor / Repair ───────────────────────────────────────────────
+/**
+ * Trích xuất JSON từ text AI trả về. Xử lý các trường hợp:
+ * - Có markdown code block (```json ... ```)
+ * - Có text thừa trước/sau JSON
+ * - JSON bị truncate (thiếu closing brackets)
+ */
+function extractJSON(text: string): any {
+  // 1. Xóa markdown code fences
+  let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+
+  // 2. Tìm vị trí bắt đầu và kết thúc của JSON object
+  const start = cleaned.indexOf('{');
+  if (start === -1) throw new Error('Không tìm thấy JSON trong phản hồi AI');
+
+  // Tìm closing bracket khớp với opening bracket đầu tiên
+  let depth = 0;
+  let end = -1;
+  for (let i = start; i < cleaned.length; i++) {
+    if (cleaned[i] === '{') depth++;
+    else if (cleaned[i] === '}') {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+
+  // 3. Nếu tìm được JSON hoàn chỉnh → parse trực tiếp
+  if (end !== -1) {
+    const jsonStr = cleaned.slice(start, end + 1);
+    try {
+      return JSON.parse(jsonStr);
+    } catch {
+      // Tiếp tục sang repair
+    }
+  }
+
+  // 4. JSON bị truncate → thêm closing brackets
+  const partial = end !== -1 ? cleaned.slice(start, end + 1) : cleaned.slice(start);
+  const repaired = repairTruncatedJSON(partial);
+  try {
+    return JSON.parse(repaired);
+  } catch (e) {
+    throw new Error(`Phản hồi AI không hợp lệ (JSON lỗi): ${(e as Error).message}`);
+  }
+}
+
+/**
+ * Thêm closing brackets/braces cho JSON bị cắt giữa chừng
+ */
+function repairTruncatedJSON(partial: string): string {
+  let result = partial.trim();
+
+  // Xóa trailing comma nếu có
+  result = result.replace(/,\s*$/, '');
+
+  // Đếm brackets mở chưa được đóng
+  const stack: string[] = [];
+  let inString = false;
+  let escape = false;
+
+  for (const ch of result) {
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') stack.push('}');
+    else if (ch === '[') stack.push(']');
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+
+  // Đóng string nếu đang mở
+  if (inString) result += '"';
+
+  // Đóng tất cả brackets còn mở (theo thứ tự ngược)
+  while (stack.length > 0) {
+    result += stack.pop();
+  }
+
+  return result;
 }
 
 // ─── License Validation ────────────────────────────────────────────────────
