@@ -5,13 +5,15 @@ import {
   Download,
   Settings,
   Users,
-  Info
+  Info,
+  BrainCircuit
 } from 'lucide-react';
 import { TikTokLogo } from '../ui/TikTokLogo';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Dashboard' },
   { path: '/influencer', icon: Users, label: 'Influencer' },
+  { path: '/koc-analysis', icon: BrainCircuit, label: 'Phân tích KOC' },
   { path: '/history', icon: History, label: 'History' },
   { path: '/downloads', icon: Download, label: 'Downloads' },
   { path: '/settings', icon: Settings, label: 'Settings' },

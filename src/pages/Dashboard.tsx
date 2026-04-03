@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Link2,
   Copy,
@@ -16,18 +17,21 @@ import {
   Package,
   Users,
   ExternalLink,
-  ClipboardCheck
+  ClipboardCheck,
+  BrainCircuit
 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import VideoPlayer from '../components/ui/VideoPlayer';
 import { LoadingSpinner, MetadataSkeleton } from '../components/ui/Loading';
 import { VideoMetadata, ProductInfo } from '../types/electron.d';
-import KOCSlidePanel from '../components/ai/KOCSlidePanel';
+import { useKOCStore } from '../stores/kocStore';
 
 // Regex nhận diện TikTok URL hợp lệ
 const TIKTOK_URL_REGEX = /https?:\/\/(www\.|vm\.|vt\.)?tiktok\.com\/.+/i;
 
 function Dashboard() {
+  const navigate = useNavigate();
+  const { setTarget: setKOCTarget } = useKOCStore();
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,8 +47,6 @@ function Dashboard() {
   // FastMoss state
   const [fastmossLoading, setFastmossLoading] = useState(false);
   const [fastmossError, setFastmossError] = useState<string | null>(null);
-  // KOC AI Panel
-  const [kocPanelOpen, setKocPanelOpen] = useState(false);
 
   // ─── Loại bỏ query params khỏi TikTok URL (chỉ giữ link chuẩn) ─────────────
   const cleanTikTokUrl = (raw: string): string => {
@@ -472,15 +474,20 @@ function Dashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {/* AI Phân Tích KOC */}
+                        {/* AI Phân Tích */}
                         <button
-                          onClick={() => setKocPanelOpen(true)}
+                          onClick={() => {
+                            if (!metadata.authorId) return;
+                            const username = metadata.uploaderId || metadata.uploader;
+                            setKOCTarget(metadata.authorId, username);
+                            navigate('/koc-analysis');
+                          }}
                           disabled={!metadata.authorId}
-                          title={!metadata.authorId ? 'Không có authorId' : 'AI phân tích KOC từ FastMoss'}
+                          title={!metadata.authorId ? 'Không có authorId' : 'Phân tích KOC cùng AI'}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          <span>🤖</span>
-                          AI KOC
+                          <BrainCircuit className="w-3.5 h-3.5" />
+                          AI Phân tích
                         </button>
                         {/* Mở FastMoss */}
                         <button
@@ -501,16 +508,6 @@ function Dashboard() {
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* KOC Slide Panel */}
-              {metadata?.authorId && (
-                <KOCSlidePanel
-                  open={kocPanelOpen}
-                  onClose={() => setKocPanelOpen(false)}
-                  authorId={metadata.authorId}
-                  username={metadata.uploaderId || metadata.uploader}
-                />
               )}
 
               {/* Actions */}

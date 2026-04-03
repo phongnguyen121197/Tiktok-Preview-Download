@@ -8,6 +8,7 @@ import Downloads from './pages/Downloads';
 import Settings from './pages/Settings';
 import Influencer from './pages/Influencer';
 import About from './pages/About';
+import KOCAnalysis from './pages/KOCAnalysis';
 import { useDownloadStore } from './stores/downloadStore';
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
               <Route path="/history" element={<History />} />
               <Route path="/downloads" element={<Downloads />} />
 <Route path="/settings" element={<Settings />} />
+              <Route path="/koc-analysis" element={<KOCAnalysis />} />
               <Route path="/about" element={<About />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

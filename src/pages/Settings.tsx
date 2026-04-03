@@ -25,6 +25,10 @@ function Settings() {
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [ytdlpStatus, setYtdlpStatus] = useState<YtdlpStatus | null>(null);
+  // Anthropic API Key
+  const [anthropicKey, setAnthropicKey] = useState('');
+  const [anthropicKeySaved, setAnthropicKeySaved] = useState(false);
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   // FastMoss cookies
   const [fastmossCookies, setFastmossCookies] = useState('');
   const [fastmossCookieSaved, setFastmossCookieSaved] = useState(false);
@@ -59,6 +63,11 @@ function Settings() {
 
         if (settingsResult.success && settingsResult.data) {
           setSettings(settingsResult.data);
+          // Load saved Anthropic API Key
+          if ((settingsResult.data as any).anthropicApiKey) {
+            setAnthropicKey((settingsResult.data as any).anthropicApiKey);
+            setAnthropicKeySaved(true);
+          }
           // Load saved FastMoss cookies
           if ((settingsResult.data as any).fastmossCookies) {
             setFastmossCookies((settingsResult.data as any).fastmossCookies);
@@ -114,6 +123,33 @@ function Settings() {
   const refreshYtdlpStatus = async () => {
     const result = await window.electronAPI.checkYtdlp();
     setYtdlpStatus(result);
+  };
+
+  // Save Anthropic API Key
+  const handleSaveAnthropicKey = async () => {
+    if (!anthropicKey.trim()) return;
+    setSaving(true);
+    try {
+      await window.electronAPI.setSetting('anthropicApiKey', anthropicKey.trim());
+      setAnthropicKeySaved(true);
+    } catch (err) {
+      console.error('Failed to save Anthropic API key:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClearAnthropicKey = async () => {
+    setSaving(true);
+    try {
+      await window.electronAPI.setSetting('anthropicApiKey', '');
+      setAnthropicKey('');
+      setAnthropicKeySaved(false);
+    } catch (err) {
+      console.error('Failed to clear Anthropic API key:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Save FastMoss cookies
@@ -239,6 +275,55 @@ function Settings() {
       </Card>
 
       {/* FastMoss Cookies */}
+      {/* ── Anthropic API Key ── */}
+      <Card>
+        <h4 className="font-display font-semibold text-white mb-1 flex items-center gap-2">
+          <span>🤖</span>
+          AI Analysis — Anthropic API Key
+          {anthropicKeySaved && <CheckCircle className="w-4 h-4 text-green-400 ml-auto" />}
+        </h4>
+        <p className="text-xs text-white/40 mb-4">
+          Dùng cho tính năng "AI Phân tích KOC". Lấy key tại{' '}
+          <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-tiktok-cyan hover:underline">
+            console.anthropic.com
+          </a>
+          {' '}→ API Keys → Create Key.
+        </p>
+        <div className="relative">
+          <input
+            type={showAnthropicKey ? 'text' : 'password'}
+            value={anthropicKey}
+            onChange={(e) => { setAnthropicKey(e.target.value); setAnthropicKeySaved(false); }}
+            placeholder="sk-ant-api03-..."
+            className="input w-full pr-10 font-mono text-sm"
+          />
+          <button
+            onClick={() => setShowAnthropicKey(v => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+          >
+            {showAnthropicKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+        <div className="flex items-center justify-between mt-3">
+          <div className="flex items-center gap-2">
+            {anthropicKeySaved && (
+              <span className="text-xs text-green-400 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" /> API Key đã lưu
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleClearAnthropicKey} disabled={!anthropicKey && !anthropicKeySaved} className="btn btn-ghost btn-sm">
+              <Trash2 className="w-4 h-4" /> Xóa
+            </button>
+            <button onClick={handleSaveAnthropicKey} disabled={!anthropicKey.trim() || saving} className="btn btn-primary btn-sm">
+              {saving ? <LoadingSpinner size="sm" /> : <Save className="w-4 h-4" />} Lưu
+            </button>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── FastMoss Cookies ── */}
       <Card>
         <h4 className="font-display font-semibold text-white mb-4 flex items-center gap-2">
           <Users className="w-4 h-4 text-purple-400" />
