@@ -16,9 +16,9 @@ import Card from '../components/ui/Card';
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const STEPS = [
-  'Mở trang KOC trên FastMoss',
+  'Mở FastMoss trong nền',
   'Thu thập GMV & tổng quan',
-  'Phân tích khán giả',
+  'Đọc dữ liệu khán giả',
   'Đọc top video & sản phẩm',
   'AI đang phân tích dữ liệu',
 ];

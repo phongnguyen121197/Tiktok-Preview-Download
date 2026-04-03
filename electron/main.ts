@@ -1297,111 +1297,156 @@ ipcMain.handle('get-product-info', async (_event, videoUrl: string): Promise<Pro
 // ============================================================================
 
 // Script inject vào FastMoss window để scrape dữ liệu
-// Sử dụng innerText + regex thay vì TreeWalker — đáng tin cậy hơn với React SPA
+// FastMoss card layout: VALUE nằm TRÊN, LABEL nằm DƯỚI trong DOM
+// → Phải tìm số TRƯỚC nhãn (valBefore), không phải sau nhãn
 const FASTMOSS_SCRAPER_SCRIPT = `
 (function() {
   var ft = document.body.innerText || '';
 
-  // Tìm giá trị số/currency sau label (trong 200 ký tự)
-  function findNum(label) {
+  // ── Tìm số/currency TRƯỚC label (FastMoss: value trên, label dưới) ────────
+  function valBefore(label) {
     var idx = ft.indexOf(label);
     if (idx < 0) return '';
-    var sub = ft.substr(idx + label.length, 200);
-    var m = sub.match(/(\\d[\\d,.]*(\\s*(?:Tr|K|M|B|tỷ|triệu|đ|₫))*)/i);
-    return m ? m[0].trim() : '';
+    // Lấy 150 ký tự TRƯỚC label, loại bỏ khoảng trắng ở cuối
+    var before = ft.substring(Math.max(0, idx - 150), idx).replace(/\\s+$/, '');
+    // Tìm giá trị currency/number ở cuối chuỗi trước (gần label nhất)
+    var m = before.match(/(\\d[\\d,.]*(?:\\s*(?:Tr|k|K|M|B))?(?:\\s*(?:đ|₫))?)\\s*$/i);
+    return m ? m[1].trim() : '';
   }
 
-  // Tìm phần trăm sau label (trong 150 ký tự)
-  function findPct(label) {
+  // ── Tìm số TRONG ngoặc đơn: "Label (8)" → "8" ────────────────────────────
+  function fromParens(label) {
     var idx = ft.indexOf(label);
     if (idx < 0) return '';
-    var sub = ft.substr(idx + label.length, 150);
-    var m = sub.match(/(\\d[\\d.]*%)/);
+    var after = ft.substring(idx + label.length, idx + label.length + 60);
+    var m = after.match(/\\(([\\d,.]+)\\)/);
+    return m ? m[1].trim() : '';
+  }
+
+  // ── Tìm % SAU label (audience bars: label trước, % sau) ──────────────────
+  function pctAfter(label) {
+    var idx = ft.indexOf(label);
+    if (idx < 0) return '';
+    // Tìm % trong vòng 40 ký tự sau label
+    var after = ft.substring(idx + label.length, idx + label.length + 40);
+    var m = after.match(/(\\d+(?:[.,]\\d+)?%)/);
     return m ? m[1] : '';
   }
 
-  // Regex trực tiếp trên toàn bộ text
-  function rex(re) {
-    var m = ft.match(re);
-    return m ? m[1] : '';
-  }
+  // ── Regex trực tiếp ───────────────────────────────────────────────────────
+  function rex(re) { var m = ft.match(re); return m ? m[1] : ''; }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // OVERVIEW — Tab "Tổng quan dữ liệu" (default tab khi load trang)
+  // Card layout: số ở trên, nhãn ở dưới → dùng valBefore
+  // ═══════════════════════════════════════════════════════════════════════════
   var overview = {
-    gmv_total:           findNum('GMV sản phẩm bán được'),
-    gmv_video:           findNum('GMV video bán được'),
-    gmv_livestream:      findNum('GMV livestream bán được'),
-    gpm_video_28d:       findNum('GPM Video TMĐT') || findNum('E-com Video GPM'),
-    total_videos:        findNum('Tổng số video'),
-    sales_videos:        findNum('Video bán hàng'),
-    non_sales_videos:    findNum('Không phải video bán hàng'),
-    total_plays:         findNum('Tổng số lượt phát'),
-    median_views:        findNum('Số lượt xem trung vị') || findNum('Trung vị lượt xem'),
-    avg_engagement_rate: rex(/Tỷ lệ tương tác trung bình[\\s\\S]{0,30}(\\d[\\d.]*%)/),
-    livestream_count:    findNum('Số buổi livestream bán hàng'),
-    livestream_avg_revenue: findNum('Doanh số trung bình mỗi buổi')
+    gmv_total:           valBefore('GMV sản phẩm bán được'),
+    gmv_video:           valBefore('GMV video bán được'),
+    gmv_livestream:      valBefore('GMV livestream bán được'),
+    // GPM: label có dạng "GPM Video TMĐT (28 ngày qua)" → valBefore tránh lấy "28"
+    gpm_video_28d:       valBefore('GPM Video TMĐT') || valBefore('E-com Video GPM'),
+    total_videos:        valBefore('Tổng số video'),
+    sales_videos:        valBefore('Video bán hàng'),
+    non_sales_videos:    valBefore('Không phải video bán hàng'),
+    total_plays:         valBefore('Tổng số lượt phát') || valBefore('Tổng lượt phát'),
+    median_views:        valBefore('Số lượt xem trung vị') || valBefore('Trung vị lượt xem'),
+    // ER có thể là "11,56%" sau label hoặc trước label tùy layout
+    avg_engagement_rate: valBefore('Tỷ lệ tương tác trung bình') ||
+                         rex(/Tỷ lệ tương tác trung bình[\\s\\S]{0,5}(\\d+[.,]?\\d*%)/),
+    livestream_count:    valBefore('Số buổi livestream bán hàng'),
+    avg_revenue_per_video: valBefore('Doanh thu trung bình mỗi video')
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AUDIENCE — Tab "Phân tích người theo dõi"
+  // Bars: label bên trái, % bên phải → dùng pctAfter
+  // Summary sentences chứa %: "là Nam, chiếm tỷ lệ 55%"
+  // ═══════════════════════════════════════════════════════════════════════════
   var audience = {
-    gender_male:    rex(/Nam[\\s\\n]+(\\d[\\d.]*%)/),
-    gender_female:  rex(/Nữ[\\s\\n]+(\\d[\\d.]*%)/),
-    age_18_24:      rex(/18-24[\\s\\n]+(\\d[\\d.]*%)/),
-    age_25_34:      rex(/25-34[\\s\\n]+(\\d[\\d.]*%)/),
-    age_35_44:      rex(/35-44[\\s\\n]+(\\d[\\d.]*%)/),
-    age_45_plus:    rex(/(?:45-54|55\\+)[\\s\\n]+(\\d[\\d.]*%)/),
-    fan_active:     rex(/Người hâm mộ tích cực[\\s\\S]{0,60}(\\d[\\d.]*%)/),
-    fan_potential:  rex(/Người hâm mộ tiềm năng[\\s\\S]{0,60}(\\d[\\d.]*%)/),
+    // Từ summary sentence hoặc bar value
+    gender_male:   rex(/(?:là )?Nam[,\\s][\\s\\S]{0,30}chiếm tỷ lệ (\\d+(?:[.,]\\d+)?%)/) ||
+                   pctAfter('\\nNam') || pctAfter('Nam\\t'),
+    gender_female: rex(/(?:là )?Nữ[,\\s][\\s\\S]{0,30}chiếm tỷ lệ (\\d+(?:[.,]\\d+)?%)/) ||
+                   pctAfter('\\nNữ') || pctAfter('Nữ\\t'),
+    age_18_24:     pctAfter('18-24'),
+    age_25_34:     pctAfter('25-34'),
+    age_35_44:     pctAfter('35-44'),
+    age_45_plus:   pctAfter('45-54') || pctAfter('55+'),
+    fan_active:    rex(/Người hâm mộ tích cực[\\s\\S]{0,100}(\\d+(?:[.,]\\d+)?%)/),
+    fan_potential: rex(/Người hâm mộ tiềm năng[\\s\\S]{0,100}(\\d+(?:[.,]\\d+)?%)/),
     region_top: (function() {
-      var cities = ['HO CHI MINH','HA NOI','CAN THO','DONG NAI','BINH DUONG','DA NANG','HAI PHONG','BAC GIANG','AN GIANG'];
+      var cities = [
+        'HA NOI','HO CHI MINH','DA NANG','HAI PHONG','CAN THO',
+        'DONG NAI','BINH DUONG','BAC GIANG','AN GIANG','LONG AN',
+        'BINH THUAN','TIEN GIANG','VUNG TAU','HUE'
+      ];
       var result = [];
       for (var i = 0; i < cities.length; i++) {
-        var p = findPct(cities[i]);
+        var p = pctAfter(cities[i]);
         if (p) result.push({ name: cities[i], percent: p });
       }
       return result;
     })()
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SALES — Tab "Phân tích bán hàng"
+  // "Tổng kết dữ liệu bán hàng" section: "Số cửa hàng hợp tác (8)"
+  // ═══════════════════════════════════════════════════════════════════════════
   var sales = {
-    partner_stores:  findNum('Số cửa hàng hợp tác'),
-    total_products:  findNum('Số lượng sản phẩm quảng cáo'),
-    total_sales:     findNum('Tổng lượt bán LKTT') || findNum('Tổng lượt bán'),
-    total_gmv:       findNum('Tổng Gmv') || findNum('Tổng GMV'),
+    // Dùng fromParens vì FastMoss ghi "Số cửa hàng hợp tác (8)"
+    partner_stores: fromParens('Số cửa hàng hợp tác') ||
+                    valBefore('Số cửa hàng hợp tác'),
+    total_products: fromParens('Số lượng sản phẩm quảng cáo') ||
+                    valBefore('Số lượng sản phẩm quảng cáo'),
+    total_sales:    fromParens('Tổng lượt bán') ||
+                    rex(/Tổng lượt bán[\\s\\S]{0,10}([\\d,]+)/),
+    total_gmv:      fromParens('Tổng Gmv') || fromParens('Tổng GMV') ||
+                    valBefore('Tổng GMV') || valBefore('Tổng Gmv'),
+
     top_categories: (function() {
       var cats = [];
-      var names = ['Chăm sóc sắc đẹp','Trang phục','Sức khỏe','Thực phẩm','Giày dép','Đồ gia dụng','Mẹ & bé','Mẹ và bé','Thể thao','Other','Khác'];
-      for (var i = 0; i < names.length; i++) {
-        var p = findPct(names[i]);
-        if (p) cats.push({ name: names[i], percent: p });
-      }
-      return cats.slice(0, 5);
-    })(),
-    top_videos: (function() {
-      var videos = [];
-      var selectors = [
-        'table tbody tr',
-        '.ant-table-tbody tr',
-        '.ant-table-row',
-        '[class*="TableRow"]',
-        '[class*="tableRow"]',
-        '[class*="VideoItem"]',
-        '[class*="videoItem"]',
-        '[class*="video-item"]',
-        '[class*="listItem"]'
+      var names = [
+        'Chăm sóc sắc đẹp','Trang phục','Sức khỏe','Thực phẩm & Đồ uống',
+        'Thực phẩm','Giày dép','Đồ gia dụng','Mẹ & bé','Mẹ và bé',
+        'Thể thao & Ngoài trời','Thể thao','Phụ kiện','Điện tử','Other','Khác'
       ];
-      var rows = [];
-      for (var s = 0; s < selectors.length; s++) {
-        var found = document.querySelectorAll(selectors[s]);
-        if (found.length > 1) { rows = Array.from(found); break; }
+      var seen = {};
+      for (var i = 0; i < names.length; i++) {
+        if (seen[names[i]]) continue;
+        var p = pctAfter(names[i]);
+        if (p) { cats.push({ name: names[i], percent: p }); seen[names[i]] = 1; }
       }
+      return cats.slice(0, 6);
+    })(),
+
+    top_videos: (function() {
+      // Ant Design table selectors (FastMoss sử dụng antd)
+      var rows = [];
+      var tried = [
+        '.ant-table-tbody > tr.ant-table-row',
+        '.ant-table-tbody > tr',
+        'table tbody tr',
+        '.ant-table-row'
+      ];
+      for (var s = 0; s < tried.length; s++) {
+        var found = document.querySelectorAll(tried[s]);
+        // Bỏ qua nếu ít hơn 1 row hoặc row không có đủ cells
+        if (found.length >= 1 && found[0].querySelectorAll('td').length >= 2) {
+          rows = Array.from(found); break;
+        }
+      }
+      var videos = [];
       for (var r = 0; r < Math.min(rows.length, 5); r++) {
-        var cells = Array.from(rows[r].querySelectorAll('td, .ant-table-cell, [class*="cell"], [class*="Cell"]'));
+        var cells = rows[r].querySelectorAll('td');
         if (cells.length >= 2) {
           videos.push({
-            title:           (cells[0] ? cells[0].textContent.trim().slice(0,60) : ''),
-            revenue:         (cells[2] ? cells[2].textContent.trim() : ''),
-            views:           (cells[3] ? cells[3].textContent.trim() : ''),
-            engagement_rate: (cells[4] ? cells[4].textContent.trim() : ''),
-            product_name:    (cells[5] ? cells[5].textContent.trim().slice(0,50) : '')
+            title:           cells[0] ? cells[0].textContent.trim().slice(0,60) : '',
+            revenue:         cells[2] ? cells[2].textContent.trim() : '',
+            views:           cells[3] ? cells[3].textContent.trim() : '',
+            engagement_rate: cells[4] ? cells[4].textContent.trim() : '',
+            product_name:    cells[5] ? cells[5].textContent.trim().slice(0,50) : ''
           });
         }
       }
@@ -1547,44 +1592,47 @@ ipcMain.handle('analyze-koc', async (event, authorId: string, username: string) 
       });
     });
 
-    // ── Bước 2: Scrape tab mặc định (Dữ liệu cốt lõi) — audience data ───────
-    sendProgress(2, 5, 'Đang đọc dữ liệu khán giả...', 25);
-    const defaultData = await scrapeFastMossSection(fastMossWindow!, FASTMOSS_SCRAPER_SCRIPT, 1000);
+    // ── Bước 2: Scrape "Tổng quan dữ liệu" (tab mặc định khi load page) ─────
+    // Tab này chứa: GMV, tổng video, ER, số buổi livestream
+    sendProgress(2, 5, 'Đang thu thập GMV & tổng quan...', 25);
+    const overviewData = await scrapeFastMossSection(fastMossWindow!, FASTMOSS_SCRAPER_SCRIPT, 1500);
 
-    // ── Bước 3: Click "Tổng quan dữ liệu" — lấy GMV + overview ──────────────
-    sendProgress(3, 5, 'Đang thu thập GMV & tổng quan...', 50);
-    await clickFastMossTab(fastMossWindow!, 'Tổng quan dữ liệu', 4000);
-    const overviewData = await scrapeFastMossSection(fastMossWindow!, FASTMOSS_SCRAPER_SCRIPT, 1000);
+    // ── Bước 3: Click "Phân tích người theo dõi" — audience ─────────────────
+    sendProgress(3, 5, 'Đang đọc dữ liệu khán giả...', 50);
+    await clickFastMossTab(fastMossWindow!, 'Phân tích người theo dõi', 4000);
+    const audienceData = await scrapeFastMossSection(fastMossWindow!, FASTMOSS_SCRAPER_SCRIPT, 1000);
 
-    // ── Bước 4: Click "Phân tích bán hàng" — lấy top videos + partner stores ─
+    // ── Bước 4: Click "Phân tích bán hàng" — stores, categories, top videos ─
     sendProgress(4, 5, 'Đang đọc top video & sản phẩm...', 70);
     await clickFastMossTab(fastMossWindow!, 'Phân tích bán hàng', 4000);
     const salesData = await scrapeFastMossSection(fastMossWindow!, FASTMOSS_SCRAPER_SCRIPT, 1500);
 
-    // ── Merge: ưu tiên overviewData cho GMV, salesData cho sales ─────────────
+    // ── Merge: mỗi tab cung cấp dữ liệu riêng biệt ───────────────────────────
     const mergedData = {
       username,
       authorId,
       scrapedAt: new Date().toISOString(),
       overview: {
-        ...(defaultData?.overview || {}),
-        ...(overviewData?.overview || {}),   // GMV fields từ "Tổng quan dữ liệu"
-        ...(salesData?.overview || {}),
+        ...(overviewData?.overview || {}),     // GMV, video counts, ER ← từ "Tổng quan dữ liệu"
+        ...(salesData?.overview || {}),        // revenue per video ← từ "Phân tích bán hàng"
       },
       audience: {
-        ...(defaultData?.audience || {}),    // audience từ tab mặc định "Dữ liệu cốt lõi"
-        ...(overviewData?.audience || {}),
-        region_top: (defaultData?.audience?.region_top?.length
-          ? defaultData.audience.region_top
+        ...(audienceData?.audience || {}),     // gender, age, region ← từ "Phân tích người theo dõi"
+        // Fallback về overviewData nếu audience tab không có data
+        gender_male:   audienceData?.audience?.gender_male   || overviewData?.audience?.gender_male   || '',
+        gender_female: audienceData?.audience?.gender_female || overviewData?.audience?.gender_female || '',
+        age_18_24:     audienceData?.audience?.age_18_24     || overviewData?.audience?.age_18_24     || '',
+        age_25_34:     audienceData?.audience?.age_25_34     || overviewData?.audience?.age_25_34     || '',
+        region_top:    (audienceData?.audience?.region_top?.length
+          ? audienceData.audience.region_top
           : overviewData?.audience?.region_top || [])
       },
       sales: {
-        ...(defaultData?.sales || {}),
         ...(overviewData?.sales || {}),
-        ...(salesData?.sales || {}),         // partner stores + top videos từ "Phân tích bán hàng"
+        ...(salesData?.sales || {}),           // partner_stores, products, categories ← từ "Phân tích bán hàng"
         top_videos: salesData?.sales?.top_videos?.length
           ? salesData.sales.top_videos
-          : (overviewData?.sales?.top_videos || defaultData?.sales?.top_videos || [])
+          : (overviewData?.sales?.top_videos || [])
       }
     };
 
