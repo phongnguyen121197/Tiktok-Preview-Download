@@ -46,6 +46,7 @@ function Dashboard() {
   // ─── Transient state (reset on remount is fine) ───────────────────────────
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadStarted, setDownloadStarted] = useState(false);
   // Auto-paste state
   const [autoPasteNotice, setAutoPasteNotice] = useState(false);
   const lastPastedUrl = useRef<string>('');
